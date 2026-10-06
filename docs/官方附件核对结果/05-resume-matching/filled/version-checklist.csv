@@ -1,0 +1,9 @@
+﻿check_id,比较对象,操作,预期,结果,证据
+"VER-01","原稿/修改稿","采纳一条建议","仅修改稿改变，原稿与本次分析快照保持原值","通过","FINAL-A Analysis 7b841d2a-2136-4312-ad05-77029d90cc85；采纳 Suggestion 065a395e-168a-4e3d-b02e-0b388a37f1b6；采纳仅作用于 Draft，原始 Resume 与 Analysis 快照保持不变；最终 saved revision=2"
+"VER-02","修改稿","忽略一条建议","正文不变，忽略状态可见","通过","FINAL-A 中 Suggestion f1cd2883-613a-4b8b-8b59-f0077078da65 的 decision=ignored；忽略后未将该建议写入 Draft；最终 saved revision=2"
+"VER-03","修改稿","重复采纳同一建议","不重复插入，不额外拼接","通过（既有验收）","Phase 5 已实际验证 suggestion 重复采纳幂等，不会重复插入正文；FINAL-A 本轮未再次重复执行该操作"
+"VER-04","保存稿/页面","手工编辑保存后重登","恢复最后保存内容","通过","FINAL-A 已完成手工编辑与显式保存；最终 saved revision=2；退出并重新登录 demo_a 后 Draft 与保存版本仍存在"
+"VER-05","保存稿/导出","下载Markdown逐段比较","正文与保存稿一致，结构清晰","通过","FINAL-A 实际完成保存稿预览和 Markdown 导出；真实导出文件保存为 examples/sample-export.md；正式 preview/export 均读取 saved revision 2"
+"VER-06","导出","检查技能/数字/公司/年限/项目","没有原材料不支持的事实和未确认问题","通过","FINAL-B Analysis 8d2361ba-e744-4ac4-a17e-d89169887e51 验证缺失技能、Linux 强度、职责和量化成果边界；未确认问题未自动进入 Draft 或导出正文"
+"VER-07","旧分析/新分析","改变岗位新建分析","独立快照与结果，旧保存稿不被覆盖","通过","Analysis 创建时保存独立 Resume/Job snapshot；FINAL-A 与 FINAL-B 为两个独立 Analysis；新 Analysis 不覆盖旧 Analysis 或 FINAL-A saved revision 2"
+"VER-08","保存稿/失败重试","模拟模型失败后重试","原稿和已保存修改稿不丢失","通过（既有验收）","Phase 3 已实际验证 failed Analysis 的显式 retry；失败任务保留输入，已有原稿和保存内容不会因 retry 丢失"

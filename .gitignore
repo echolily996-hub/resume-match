@@ -1,0 +1,13 @@
+.env
+.venv/
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.db
+coverage.xml
+test-results/
+.pytest-*
+*.broken
+题目5-简历证据与改稿核对/

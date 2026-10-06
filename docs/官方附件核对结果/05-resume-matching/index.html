@@ -1,0 +1,50 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>简历与岗位匹配助手 · 题目附件</title><style>
+    *{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#1b2d46;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.8}header{padding:46px max(24px,calc((100vw - 1200px)/2));background:#132f50;color:white}header small{color:#a9c7e7;letter-spacing:.12em}header h1{margin:8px 0;font-size:30px}main{max-width:1250px;margin:auto;display:grid;grid-template-columns:230px minmax(0,1fr);gap:24px;padding:28px 24px}nav{position:sticky;top:22px;align-self:start;font-size:14px}nav a{display:block;padding:7px 12px;text-decoration:none;color:#356286;border-radius:7px}nav a:hover{background:#dfeafa}article{min-width:0}section,.files,figure{background:white;border:1px solid #e0e7f0;border-radius:16px;padding:25px 30px;margin:0 0 20px}section{scroll-margin-top:20px}h1{font-size:25px;line-height:1.5}h2{font-size:21px;margin-top:28px}h3{font-size:18px}a{color:#1967a8;text-underline-offset:3px}table{border-collapse:collapse;font-size:14px;width:100%;display:block;overflow:auto}td,th{border:1px solid #dce5ef;padding:9px 12px;text-align:left}th{background:#edf3fa;white-space:nowrap}td{min-width:120px}pre{background:#112940;color:#e6f2ff;border-radius:9px;padding:17px;overflow:auto}code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}p code,li code,td code{background:#edf2f7;padding:2px 5px;border-radius:4px}img{width:100%;height:auto}figcaption{font-size:13px;text-align:right}.files a{display:inline-block;margin:4px 6px 4px 0;background:#edf4fa;border:1px solid #dce7f2;border-radius:7px;padding:4px 9px;font-size:13px;max-width:100%;overflow-wrap:anywhere}.files h2{margin-top:0}.muted{color:#69819d;font-size:13px} @media(max-width:780px){main{display:block;padding:16px}nav{position:static;margin-bottom:20px}nav a{display:inline-block}section,.files,figure{padding:18px}header{padding:30px 20px}header h1{font-size:26px}} @media print{nav{display:none}main{display:block}header{color:#172c4c;background:white}section,.files,figure{break-inside:avoid}}
+    </style><header><small>QUESTION 05 · ATTACHMENTS</small><h1>简历与岗位匹配助手</h1></header><main><nav><a href="#section-0">使用说明</a><a href="#section-1">要求、证据与修改建议的对应关系</a><a href="#files">附件文件</a></nav><article><section id="section-0"><h1>简历与岗位匹配助手 · 附件</h1>
+<p>这里提供对照表和验证方法，不提供简历、岗位或模型输出。候选人仍自行准备两份虚构简历、两份岗位描述及两个测试账号。</p>
+<ul>
+<li><code>evidence-comparison.csv</code>：填写岗位要求、简历原文、判断和建议之间的对应关系。</li>
+<li><code>comparison-guide.md</code>：判断状态及采纳、忽略规则。</li>
+<li><code>version-checklist.csv</code>：核对原稿、分析快照、保存稿和导出文件。</li>
+<li><code>test-cases.csv</code>：信息缺口、重复采纳、重新分析及权限等场景。</li>
+</ul>
+<p>表格用于说明和复核，不要求候选人的页面照搬表格排版。</p>
+</section><section id="section-1"><h1>要求、证据与修改建议的对应关系</h1>
+<p>一条主要岗位要求填写一行。job_requirement_quote 引用本次岗位快照原文，resume_evidence_quote 引用本次简历快照原文，没有对应内容就留空，不能让模型伪造引文。</p>
+<table>
+<thead>
+<tr>
+<th>match_status</th>
+<th>如何理解</th>
+<th>修改稿处理</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>已体现</td>
+<td>能用简历原文支持该要求</td>
+<td>可优化表达，但不扩大事实范围</td>
+</tr>
+<tr>
+<td>未体现</td>
+<td>当前简历找不到该要求的证据</td>
+<td>提示缺口，不推断“用户不会”，不自动补入技能</td>
+</tr>
+<tr>
+<td>需要补充确认</td>
+<td>有相关线索，但具体责任、范围或结果不明确</td>
+<td>将补充问题单列，未确认前不作为事实写入</td>
+</tr>
+</tbody></table>
+<p>涉及改写时填原段落、建议段落和理由；只有补充问题时建议文本可空。decision 填未处理 / 采纳 / 忽略。saved_revision 关联保存后的修改稿版本，evidence_ref 指向页面或测试证据。</p>
+<h2>自备材料应包含的边界</h2>
+<ul>
+<li>一份简历有真实明确的项目描述，但没有量化结果：系统不能自行补出“提升 30%”等数字。</li>
+<li>一个岗位要求简历没写的技能：标为未体现或待确认，不直接添加到技能栏。</li>
+<li>有团队项目但未说个人负责范围：询问职责，不能直接改为“独立负责整个系统”。</li>
+<li>一组资料明显较匹配，另一组有缺口：输出应随输入变化，不能是同一固定报告。</li>
+</ul>
+<h2>修改及版本核对</h2>
+<p>原稿是创建时输入；分析快照是每次分析时的简历与岗位；修改稿是用户采纳、编辑并保存的正文，三者用途不同。采纳影响当前修改稿，不改原始输入；忽略不改变正文；重复采纳不会重复插入。</p>
+<p>手动编辑和采纳后显式保存，随后导出已保存内容。页面仍有未保存改动时，应清楚说明导出的是保存稿，或先引导保存，不能悄悄导出另一个版本。新建一次分析必须有独立结果和输入快照，不覆盖旧的已保存修改稿。</p>
+<p>Markdown 导出可有合理的标题、列表格式，但文本内容必须对应保存稿；模型判断、解释、被忽略建议和未确认问题均不属于简历正文。不要以“模型会幻觉”为理由把事实检查交给最终导出阶段。</p>
+</section><div class="files" id="files"><h2>附件文件</h2><a href="README.md">README.md</a><a href="comparison-guide.md">comparison-guide.md</a><a href="evidence-comparison.csv">evidence-comparison.csv</a><a href="test-cases.csv">test-cases.csv</a><a href="version-checklist.csv">version-checklist.csv</a><p class="muted">本页可离线阅读。CSV 可用电子表格软件打开；外部来源链接需要联网。更新日期：2026-10-04。</p></div></article></main></html>
