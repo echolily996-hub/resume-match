@@ -310,20 +310,52 @@ def validated_rows(claimed: ClaimedAnalysis, output, warnings=None):
         row_match_status = value.match_status
         row_reason = value.reason
         row_questions = value.confirmation_questions
+        row_resume_quote = value.resume_evidence_quote
+        resume_span = None
         try:
             job_span = quote_span(
                 claimed.job_description_snapshot, value.job_requirement_quote,
                 '岗位要求引文', 'INVALID_JOB_QUOTE')
-            resume_span = None
-            if value.resume_evidence_quote is not None:
-                resume_span = quote_span(
-                    claimed.resume_snapshot, value.resume_evidence_quote,
-                    '简历证据引文', 'INVALID_RESUME_QUOTE', single_paragraph=True)
-            if value.match_status != 'reflected' and any(
-                    phrase in value.reason for phrase in forbidden_claims):
-                raise EvidenceError(
-                    'FORBIDDEN_CAPABILITY_CLAIM', '未体现不能断言求职者没有能力')
-            validate_reason_facts(value)
+
+            invalid_resume_quote = False
+            if row_resume_quote is not None:
+                try:
+                    resume_span = quote_span(
+                        claimed.resume_snapshot, row_resume_quote,
+                        '简历证据引文', 'INVALID_RESUME_QUOTE',
+                        single_paragraph=True)
+                except EvidenceError as exc:
+                    exc.add_requirement_context(
+                        value.key,
+                        ordinal,
+                        True,
+                        value.match_status,
+                    )
+                    if exc.violation_code != 'INVALID_RESUME_QUOTE':
+                        raise
+                    warnings.append({
+                        'code': 'INVALID_RESUME_QUOTE_DOWNGRADED',
+                        **evidence_diagnostic(exc),
+                    })
+                    invalid_resume_quote = True
+                    row_resume_quote = None
+                    resume_span = None
+                    row_match_status = 'needs_confirmation'
+                    row_reason = (
+                        '模型返回的简历证据无法作为单段连续原文核验，'
+                        '现有信息不足以确认该岗位要求。'
+                    )
+                    row_questions = [
+                        '请补充一段能够单独、完整证明该岗位要求的简历经历或信息。'
+                    ]
+
+            if not invalid_resume_quote:
+                if value.match_status != 'reflected' and any(
+                        phrase in value.reason for phrase in forbidden_claims):
+                    raise EvidenceError(
+                        'FORBIDDEN_CAPABILITY_CLAIM',
+                        '未体现不能断言求职者没有能力')
+                validate_reason_facts(value)
         except EvidenceError as exc:
             exc.add_requirement_context(
                 value.key, ordinal, value.resume_evidence_quote is not None,
@@ -342,7 +374,7 @@ def validated_rows(claimed: ClaimedAnalysis, output, warnings=None):
             requirement_key=value.key,
             job_quote=value.job_requirement_quote,
             job_span=job_span,
-            resume_quote=value.resume_evidence_quote,
+            resume_quote=row_resume_quote,
             resume_span=resume_span,
             match_status=row_match_status,
             reason=row_reason,
@@ -351,8 +383,53 @@ def validated_rows(claimed: ClaimedAnalysis, output, warnings=None):
     return rows
 
 
-def build_suggestions(resume_text, rows, candidates):
+def _new_ascii_facts(original, suggested):
+    original_facts = {
+        value.casefold()
+        for value in ASCII_FACT.findall(original)
+    }
+    return {
+        value.casefold()
+        for value in ASCII_FACT.findall(suggested)
+        if value.casefold() not in original_facts
+    }
+
+
+def _new_number_facts(original, suggested):
+    original_facts = set(NUMBER_FACT.findall(original))
+    return {
+        value
+        for value in NUMBER_FACT.findall(suggested)
+        if value not in original_facts
+    }
+
+
+def _adds_responsibility_inflation(original, suggested):
+    for term in RESPONSIBILITY_TERMS:
+        if term in original or term not in suggested:
+            continue
+        if term == '管理':
+            remaining = re.sub(
+                r'管理[^，,。；;！？!？\n]{0,40}(?:数据|信息|记录)',
+                '',
+                suggested,
+            )
+            if term not in remaining:
+                continue
+        return True
+    return False
+
+
+def _adds_capability_inflation(original, suggested):
+    return any(
+        term in suggested and term not in original
+        for term in ('精通', '熟练', '专家')
+    )
+
+
+def build_suggestions(resume_text, rows, candidates, suggestion_reviews=None):
     warnings = []
+    suggestion_reviews = suggestion_reviews or {}
 
     rows_by_key = {
         row.requirement_key: row
@@ -368,7 +445,7 @@ def build_suggestions(resume_text, rows, candidates):
     # value = (ranking, Suggestion)
     selected_by_segment = {}
 
-    for candidate in candidates:
+    for candidate_index, candidate in enumerate(candidates):
         row = rows_by_key[candidate.requirement_key]
         original = segments_by_id.get(candidate.source_segment_id)
 
@@ -383,6 +460,9 @@ def build_suggestions(resume_text, rows, candidates):
 
         source_matches = original == candidate.original_passage
         rendered = f'- {original}'
+        is_bullet = candidate.template_id == 'markdown-bullet-v1'
+        is_faithful = candidate.template_id == 'faithful-rewrite-v1'
+        suggested = candidate.suggested_passage
 
         fact_support_failures = []
 
@@ -395,7 +475,7 @@ def build_suggestions(resume_text, rows, candidates):
             if support.source_quote not in original:
                 codes.append('SOURCE_QUOTE_NOT_IN_ORIGINAL')
 
-            if support.proposed_fact != support.source_quote:
+            if is_bullet and support.proposed_fact != support.source_quote:
                 codes.append('PROPOSED_FACT_DIFFERS_FROM_SOURCE')
 
             if codes:
@@ -406,7 +486,10 @@ def build_suggestions(resume_text, rows, candidates):
 
         support_is_local = all(
             support.source_quote in original
-            and support.proposed_fact == support.source_quote
+            and (
+                not is_bullet
+                or support.proposed_fact == support.source_quote
+            )
             for support in candidate.fact_support
         )
 
@@ -422,12 +505,12 @@ def build_suggestions(resume_text, rows, candidates):
                 'SOURCE_PASSAGE_MISMATCH'
             )
 
-        if candidate.template_id != 'markdown-bullet-v1':
+        if not (is_bullet or is_faithful):
             blocked_detail_codes.append(
                 'TEMPLATE_ID_MISMATCH'
             )
 
-        if candidate.suggested_passage != rendered:
+        if is_bullet and candidate.suggested_passage != rendered:
             blocked_detail_codes.append(
                 'RENDERED_TEXT_MISMATCH'
             )
@@ -441,20 +524,68 @@ def build_suggestions(resume_text, rows, candidates):
             ('- ', '* ', '+ ')
         )
 
-        if already_markdown:
+        if is_bullet and already_markdown:
             blocked_detail_codes.append(
                 'ALREADY_MARKDOWN_LIST'
             )
 
-        # 真正决定是否可执行的安全边界。
-        # 模型自己的改写文本不会进入 draft。
-        actionable = (
-            row.match_status == 'reflected'
-            and row.resume_quote is not None
+        faithful_hard_failure = False
+        if is_faithful:
+            faithful_checks = (
+                ('SUGGESTED_TEXT_EMPTY', not suggested.strip()),
+                ('SUGGESTED_TEXT_UNCHANGED', suggested == original),
+                ('FACT_SUPPORT_MISSING', not candidate.fact_support),
+                (
+                    'UNSUPPORTED_NUMBER',
+                    bool(_new_number_facts(original, suggested)),
+                ),
+                (
+                    'UNSUPPORTED_ASCII_FACT',
+                    bool(_new_ascii_facts(original, suggested)),
+                ),
+                (
+                    'RESPONSIBILITY_INFLATION',
+                    _adds_responsibility_inflation(original, suggested),
+                ),
+                (
+                    'CAPABILITY_INFLATION',
+                    _adds_capability_inflation(original, suggested),
+                ),
+            )
+            for code, failed in faithful_checks:
+                if failed:
+                    blocked_detail_codes.append(code)
+                    faithful_hard_failure = True
+
+            review_verdict = suggestion_reviews.get(candidate_index)
+            if review_verdict != 'supported':
+                blocked_detail_codes.append(
+                    'SUGGESTION_REVIEW_UNAVAILABLE'
+                    if review_verdict is None
+                    else 'SUGGESTION_REVIEW_NOT_SUPPORTED'
+                )
+
+        # 只有受约束模板或通过两层校验的事实守恒改写才能进入 draft。
+        evidence_is_local = (
+            row.resume_quote is not None
             and row.resume_quote in original
-            and candidate.template_id == 'markdown-bullet-v1'
+        )
+        bullet_actionable = (
+            is_bullet
+            and row.match_status == 'reflected'
+            and evidence_is_local
             and not already_markdown
         )
+        faithful_actionable = (
+            is_faithful
+            and row.match_status == 'reflected'
+            and evidence_is_local
+            and source_matches
+            and support_is_local
+            and not faithful_hard_failure
+            and suggestion_reviews.get(candidate_index) == 'supported'
+        )
+        actionable = bullet_actionable or faithful_actionable
 
         blocked_reason = (
             None
@@ -467,14 +598,29 @@ def build_suggestions(resume_text, rows, candidates):
             requirement_id=row.id,
             source_segment_id=candidate.source_segment_id,
             original_text=original,
-            suggested_text=rendered if actionable else None,
+            suggested_text=(
+                rendered
+                if bullet_actionable
+                else (suggested if faithful_actionable else None)
+            ),
             rewrite_reason=(
-                '仅调整已有原文的展示格式，不新增或改写事实。'
-                if actionable
-                else '建议候选未通过安全校验，不能直接写入修改稿。'
+                (
+                    '仅调整已有原文的展示格式，不新增或改写事实。'
+                    if bullet_actionable
+                    else (
+                        '在不新增简历事实的前提下优化已有表述，'
+                        '使表达更清晰并更贴合岗位要求。'
+                    )
+                )
+                if actionable else
+                '建议候选未通过安全校验，不能直接写入修改稿。'
             ),
             template_id=candidate.template_id,
-            template_args={'prefix': '- '},
+            template_args=(
+                {'prefix': '- '}
+                if is_bullet
+                else candidate.template_args.model_dump()
+            ),
             validation_status=(
                 'actionable'
                 if actionable
@@ -519,7 +665,8 @@ def build_suggestions(resume_text, rows, candidates):
     
 
 
-def finish_success(engine, claimed, result, rows, warnings=None):
+def finish_success(engine, claimed, result, rows, warnings=None,
+                   suggestion_reviews=None):
     with Session(engine) as db, db.begin():
         item = db.get(Analysis, claimed.id)
 
@@ -545,6 +692,7 @@ def finish_success(engine, claimed, result, rows, warnings=None):
             claimed.resume_snapshot,
             rows,
             result.output.suggestions,
+            suggestion_reviews,
         )
 
         db.add_all(suggestions)
@@ -604,8 +752,66 @@ def process_next(engine, settings, client=None):
             result.metadata['fact_review'] = {
                 **exc.metadata, 'status': 'unavailable', 'error_code': exc.code,
             }
+
+        suggestion_reviews = {}
+        suggestion_review_warnings = []
+        faithful_candidates = [
+            (index, candidate)
+            for index, candidate in enumerate(result.output.suggestions)
+            if candidate.template_id == 'faithful-rewrite-v1'
+        ]
+        if faithful_candidates:
+            try:
+                suggestion_review_result = client.review_suggestions(
+                    [candidate for _, candidate in faithful_candidates],
+                    claimed.attempt_no,
+                )
+                reviews_by_ordinal = {
+                    review.ordinal: review
+                    for review in suggestion_review_result.output.reviews
+                }
+                for review_ordinal, (candidate_index, _) in enumerate(
+                    faithful_candidates,
+                    start=1,
+                ):
+                    review = reviews_by_ordinal.get(review_ordinal)
+                    if review is not None:
+                        suggestion_reviews[candidate_index] = review.verdict
+                    if review is None or review.verdict != 'supported':
+                        suggestion_review_warnings.append({
+                            'code': 'SUGGESTION_FACT_REVIEW_WARNING',
+                            'ordinal': review_ordinal,
+                            'verdict': (
+                                review.verdict if review is not None
+                                else 'missing'
+                            ),
+                        })
+                result.metadata['suggestion_review'] = {
+                    **suggestion_review_result.metadata,
+                    'status': 'completed',
+                    'reviewed_count': len(faithful_candidates),
+                }
+            except (ModelCallError, AttributeError) as exc:
+                suggestion_review_warnings = [{
+                    'code': 'SUGGESTION_REVIEW_UNAVAILABLE'
+                }]
+                result.metadata['suggestion_review'] = {
+                    **(exc.metadata if isinstance(exc, ModelCallError) else {}),
+                    'status': 'unavailable',
+                    'error_code': (
+                        exc.code
+                        if isinstance(exc, ModelCallError)
+                        else 'REVIEWER_NOT_AVAILABLE'
+                    ),
+                }
         finish_success(
-            engine, claimed, result, rows, validation_warnings + review_warnings)
+            engine,
+            claimed,
+            result,
+            rows,
+            validation_warnings + review_warnings + suggestion_review_warnings,
+            suggestion_reviews,
+        )
     except EvidenceError as exc:
         metadata = dict(result.metadata) if result else None
         if metadata is not None:

@@ -247,7 +247,10 @@ needs_confirmation
 
 Analysis 完成后，后端根据模型结果生成 suggestion。
 
-当前自动可采纳修改采用保守策略。
+自动可采纳修改采用受约束的事实守恒策略，支持两类建议：
+
+- 兼容把已有原文整理为 Markdown 条目；
+- 在不改变事实的前提下精简措辞、调整语序，并突出原文已有的岗位相关信息。
 
 安全 suggestion 必须满足事实约束，例如：
 
@@ -256,10 +259,10 @@ Analysis 完成后，后端根据模型结果生成 suggestion。
 使用 Python 和 FastAPI 开发 REST API。
 
 建议：
-- 使用 Python 和 FastAPI 开发 REST API。
+基于 Python 与 FastAPI 开发 REST API。
 ```
 
-这种修改只调整展示格式，不改变事实。
+后端会先检查原始段落、简历证据、数字、英文技术或产品词、职责词和能力强度词，再对自然语言改写执行独立的 suggestion 事实审校。只有确定性校验和事实审校都通过时，建议才能直接写入 Draft；审校不确定或不可用时会阻止自动采纳。
 
 若 suggestion：
 
@@ -271,7 +274,7 @@ Analysis 完成后，后端根据模型结果生成 suggestion。
 - 新增量化成果；
 - 对事实进行无法验证的扩展；
 
-则不会作为可直接采纳的安全建议进入 Draft。
+则不会作为可直接采纳的安全建议进入 Draft。该机制用于尽量阻止事实幻觉，不能替代用户对最终简历内容的核对。
 
 当没有可安全直接修改的内容时，系统可以正常显示：
 
@@ -389,11 +392,13 @@ Markdown 导出内容不会包含：
 - 被忽略 suggestion；
 - 未保存 Draft 修改。
 
-最终实际导出示例：
+FINAL-C 由应用实际导出的 Markdown 示例：
 
 ```text
 examples/sample-export.md
 ```
+
+该文件已经与 FINAL-C Saved Revision v1 核对一致，其中包含实际采纳后的 PostgreSQL 内容级改写。
 
 ---
 
@@ -530,10 +535,10 @@ docker compose exec api python -m pytest -q
 最终验证结果：
 
 ```text
-45 passed
+59 passed, 3 non-blocking warnings
 ```
 
-另有 1 个非阻断性的依赖弃用 warning，不影响当前业务功能。
+3 个 warning 均为非阻断 warning，不影响测试通过。
 
 ### 前端
 
@@ -558,7 +563,7 @@ passed
 docker compose ps
 ```
 
-最终验收时 API、Web 和 PostgreSQL 均正常运行。
+`docker compose up -d --build` 成功，最终验收时 `db`、`api`、`web` 均为 healthy。
 
 ---
 
@@ -566,7 +571,7 @@ docker compose ps
 
 项目包含两组固定虚构验收材料。
 
-### FINAL-A：较匹配场景
+### FINAL-C：较匹配与内容级改写场景
 
 ```text
 examples/resume-match.md
@@ -576,26 +581,28 @@ examples/job-match.md
 用于验证：
 
 - 多项岗位要求已有简历证据；
-- 安全 suggestion 可以正常产生；
+- 真实模型生成事实守恒的内容级 suggestion；
 - 接受 / 忽略；
 - Draft；
 - 保存；
 - preview；
 - export。
 
-最终 Analysis ID：
+最终实际模型调用：
 
 ```text
-7b841d2a-2136-4312-ad05-77029d90cc85
+model: qwen3.8-max
+attempt_no: 3
+duration_ms: 34464
+provider_request_id: e99636a6-0152-92e5-b169-add79f37f9c2
+analysis_id: df5dd27c-9185-4004-a5e9-9d1511eea21b
 ```
 
-真实模型：
+FINAL-C 实际采纳 Suggestion `de864cc4-f082-4c43-89f8-aea793f9889e`（Requirement `221e92fb-3cb1-405f-8a52-119a7549ca99`），将 PostgreSQL 原文改写为“熟悉 PostgreSQL 关系型数据库，能够进行数据表设计、常见查询和事务处理。”；Suggestion `4db2e2f5-1f4e-46ff-8f95-b40f1724c89b`（Requirement `b1807579-2caa-4be0-9364-b91201e738ff`）被忽略。Docker Suggestion `56a4c670-107e-4978-a117-891a26b4d9f4` 当前仍为 pending。
 
-```text
-qwen3.8-max
-```
+Draft `79a108cf-1cb4-47e4-8c78-50b06ed3b497` 已显式保存，当前 `edit_version=3`、`saved_version=1`；Saved Revision v1 ID 为 `7358377a-0853-4e94-80e0-5ec603c7b0cb`，当前 Draft 与该保存版本完全一致。
 
-### FINAL-B：信息缺口场景
+### FINAL-D：信息缺口与事实边界场景
 
 ```text
 examples/resume-gap.md
@@ -609,13 +616,18 @@ examples/job-gap.md
 - 有限职责；
 - 无量化成果；
 - `needs_confirmation`；
-- 无安全 suggestion 时的正确处理。
+- Redis / Kubernetes 实际经验缺口；
+- 独立负责与量化成果缺口；
+- 不编造、不升级事实；
+- 非法简历引文按 requirement 安全降级。
 
 最终 Analysis ID：
 
 ```text
-8d2361ba-e744-4ac4-a17e-d89169887e51
+26928b36-39d7-4053-ae0b-6128469f5c58
 ```
+
+该 Analysis 第一次因 `INVALID_RESUME_QUOTE / QUOTE_CROSSES_PARAGRAPH` 失败；修复后 attempt 2 使用 `qwen3.8-max` 成功，耗时 `16989 ms`，provider request id 为 `977d089e-95e4-98d9-9118-67277ca2a895`。
 
 ---
 
@@ -629,8 +641,8 @@ docs/最终验收报告.md
 
 其中包含：
 
-- FINAL-A 完整流程；
-- FINAL-B 事实边界；
+- FINAL-C 完整流程与内容级 suggestion；
+- FINAL-D 信息缺口与事实边界；
 - 账号权限隔离；
 - Draft / saved revision；
 - restore；
@@ -760,7 +772,7 @@ Restore                  PASS
 Preview                  PASS
 Markdown Export          PASS
 持久化                   PASS
-Backend Tests            45 passed
+Backend Tests            59 passed, 3 non-blocking warnings
 Frontend Build           PASS
 Alembic                  0007_saved_revisions
 ```

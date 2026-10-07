@@ -138,8 +138,12 @@ def test_quote_prompt_and_schema_require_exact_single_paragraph_substrings():
     assert 'or null when no exact supporting substring is certain' in resume_description
     output_schema = AnalysisOutput.model_json_schema()
     assert 'suggestions' in output_schema['required']
-    assert 'template_id=markdown-bullet-v1' in SYSTEM_PROMPT
+    assert 'markdown-bullet-v1 或 faithful-rewrite-v1' in SYSTEM_PROMPT
+    assert 'suggested_passage 的全部事实必须由 original_passage 支持' in SYSTEM_PROMPT
     assert 'needs_confirmation、not_reflected 和补充问题不得形成建议正文' in SYSTEM_PROMPT
+    assert '每个 requirement 应尽量是一个原子、可独立判断的岗位条件' in SYSTEM_PROMPT
+    assert 'resume_evidence_quote 只能来自一个 resume_segments 段落' in SYSTEM_PROMPT
+    assert '严禁为了支持一个复合要求跨两个简历条目拼接证据' in SYSTEM_PROMPT
 
 
 def transport_for(output=None, status=200, match_review_verdict='supported',
@@ -424,6 +428,54 @@ def test_service_and_evidence_failures_are_persisted(engine):
         assert numeric_detail['requirements'] == []
 
 
+@pytest.mark.parametrize(('evidence', 'detail_code'), [
+    ('技能：Python\n项目：参与 API 开发', 'QUOTE_CROSSES_PARAGRAPH'),
+    ('简历中不存在的证据', 'QUOTE_NOT_FOUND'),
+])
+def test_invalid_resume_quote_is_downgraded_per_requirement(
+    engine,
+    evidence,
+    detail_code,
+):
+    app = configured_app(engine)
+    with TestClient(app) as client:
+        info = login(client).json()
+        resume, job = inputs(client, info)
+        task = create_analysis(
+            client,
+            info,
+            resume,
+            job,
+            f'invalid-resume-{detail_code.lower()}',
+        ).json()
+        output = valid_output(evidence=evidence)
+        output['suggestions'] = [suggestion_candidate()]
+
+        assert process_next(engine, app.state.settings, ModelClient(
+            app.state.settings,
+            transport_for(output),
+        ))
+
+        detail = client.get(f"/api/v1/analyses/{task['id']}").json()
+        assert detail['state'] == 'succeeded'
+        assert detail['error_code'] is None
+        requirement = detail['requirements'][0]
+        assert requirement['match_status'] == 'needs_confirmation'
+        assert requirement['resume_evidence_quote'] is None
+        assert requirement['resume_span'] is None
+        assert requirement['reason'] == (
+            '模型返回的简历证据无法作为单段连续原文核验，'
+            '现有信息不足以确认该岗位要求。'
+        )
+        assert requirement['confirmation_questions']
+        assert detail['warnings'][0]['code'] == (
+            'INVALID_RESUME_QUOTE_DOWNGRADED'
+        )
+        assert detail['warnings'][0]['violation_detail_code'] == detail_code
+        assert detail['suggestions'][0]['validation_status'] == 'blocked'
+        assert detail['suggestions'][0]['suggested_text'] is None
+
+
 def test_fact_boundary_hard_validation():
     claimed = ClaimedAnalysis(
         id='analysis-id', attempt_no=1,
@@ -511,9 +563,6 @@ def test_fact_boundary_hard_validation():
     assert inflated_warnings[0]['requirement_key'] == 'annual_budget'
 
     cases = [
-        ({
-            **valid_output(evidence='技能：Python\n项目：参与 API 开发'),
-        }, 'INVALID_RESUME_QUOTE', 'QUOTE_CROSSES_PARAGRAPH'),
         ({
             'schema_version': '1', 'requirements': [{
                 'key': 'r1', 'job_requirement_quote': '要求 Python',
